@@ -405,28 +405,33 @@ loop(Parent, Name, StateName, StateData, Mod, hibernate, Debug) ->
 		       [Parent, Name, StateName, StateData, Mod, 
 			Debug]);
 loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
-    Msg = receive
-	      Input ->
-		    Input
-	  after Time ->
-		  {'$gen_event', timeout}
-	  end,
-    decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug, false).
+    receive
+        {system, From, Req} ->
+            sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+                                    [Name, StateName, StateData, Mod, Time], true);
+        {'EXIT', Parent, Reason}=Msg ->
+            terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
+        Msg ->
+            decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug)
+
+        after Time ->
+            Msg =  {'$gen_event', timeout},
+            decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug)
+    end.
 
 wake_hib(Parent, Name, StateName, StateData, Mod, Debug) ->
-    Msg = receive
-	      Input ->
-		  Input
-	  end,
-    decode_msg(Msg, Parent, Name, StateName, StateData, Mod, hibernate, Debug, true).
-
-decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug, Hib) ->
-    case Msg of
+    receive
         {system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
-				  [Name, StateName, StateData, Mod, Time], Hib);
-	{'EXIT', Parent, Reason} ->
-	    terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
+            sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+                                    [Name, StateName, StateData, Mod, hibernate], true);
+        {'EXIT', Parent, Reason}=Msg ->
+            terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
+        Msg ->
+            decode_msg(Msg, Parent, Name, StateName, StateData, Mod, hibernate, Debug)
+    end.
+
+decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug) ->
+    case Msg of
 	_Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time);
 	_Msg ->

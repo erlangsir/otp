@@ -355,28 +355,31 @@ unregister_name(Pid) when is_pid(Pid) ->
 loop(Parent, Name, State, Mod, hibernate, Debug) ->
     proc_lib:hibernate(?MODULE,wake_hib,[Parent, Name, State, Mod, Debug]);
 loop(Parent, Name, State, Mod, Time, Debug) ->
-    Msg = receive
-	      Input ->
-		    Input
-	  after Time ->
-		  timeout
-	  end,
-    decode_msg(Msg, Parent, Name, State, Mod, Time, Debug, false).
+    receive
+        {system, From, Req} ->
+            sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+                                [Name, State, Mod, Time], false);
+        {'EXIT', Parent, Reason}=Msg->
+            terminate(Reason, Name, Msg, Mod, State, Debug);
+        Msg ->
+            decode_msg(Msg, Parent, Name, State, Mod, Debug)
+    after Time ->
+            decode_msg(timeout, Parent, Name, State, Mod, Debug)
+    end.
 
 wake_hib(Parent, Name, State, Mod, Debug) ->
-    Msg = receive
-	      Input ->
-		  Input
-	  end,
-    decode_msg(Msg, Parent, Name, State, Mod, hibernate, Debug, true).
+    receive
+        {system, From, Req} ->
+            sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+                                [Name, State, Mod, hibernate], true);
+        {'EXIT', Parent, Reason}=Msg ->
+            terminate(Reason, Name, Msg, Mod, State, Debug);
+        Msg ->
+            decode_msg(Msg, Parent, Name, State, Mod, Debug)
+    end.
 
-decode_msg(Msg, Parent, Name, State, Mod, Time, Debug, Hib) ->
+decode_msg(Msg, Parent, Name, State, Mod, Debug) ->
     case Msg of
-	{system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
-				  [Name, State, Mod, Time], Hib);
-	{'EXIT', Parent, Reason} ->
-	    terminate(Reason, Name, Msg, Mod, State, Debug);
 	_Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, Name, State, Mod);
 	_Msg ->
